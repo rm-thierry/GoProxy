@@ -32,7 +32,6 @@ func readConsoleCommands() {
 			fmt.Println("/help: Show this Menu")
 			fmt.Println("/clear: Clear the Console")
 		case "stop":
-			fmt.Println("Server shutting Down")
 			os.Exit(0)
 		case "clear":
 			clearConsole()
@@ -63,9 +62,6 @@ func handleConnection(clientConn net.Conn, minecraftServer string, minecraftPort
 	}()
 
 	_, err = io.Copy(clientConn, serverConn)
-	if err != nil {
-		fmt.Println("Error forwarding data to client:", err)
-	}
 }
 
 func main() {
@@ -82,7 +78,7 @@ func main() {
 	fmt.Println("")
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
-		fmt.Println("Error starting server:", err)
+		fmt.Println("\033[0;36mPROXY: \033[0m Error starting server:", err)
 		return
 	}
 	defer listener.Close()
@@ -92,11 +88,13 @@ func main() {
 	for {
 		clientConn, err := listener.Accept()
 		if err != nil {
-			fmt.Println("Error accepting client connection:", err)
+			fmt.Println("\033[0;36mPROXY: \033[0m Error accepting client connection:", err)
+			fmt.Print("\033[0;36mPROXY: \033[0m")
 			continue
 		}
 
 		go handleConnection(clientConn, minecraftServer, minecraftPort)
-		fmt.Println("Ein Client ist gejoint", clientConn.RemoteAddr().String())
+		fmt.Println("Ein Client ist gejoint ", clientConn.RemoteAddr().String())
+		fmt.Print("\033[0;36mPROXY: \033[0m")
 	}
 }
