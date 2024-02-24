@@ -20,24 +20,6 @@ func sendProxyProtocol(clientConn net.Conn, serverOutput io.Writer) {
 	serverOutput.Write([]byte(proxyProtocolHeader))
 }
 
-func readAndHandleCommands(clientConn net.Conn) {
-	reader := bufio.NewReader(clientConn)
-	for {
-		command, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Error reading command:", err)
-			return
-		}
-
-		switch strings.TrimSpace(command) {
-		case "help":
-			fmt.Fprintln(clientConn, "Available commands: help, status, etc.")
-		default:
-			fmt.Fprintln(clientConn, "Unknown command. Type 'help' for available commands.")
-		}
-	}
-}
-
 func readConsoleCommands() {
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
@@ -73,7 +55,6 @@ func handleConnection(clientConn net.Conn, minecraftServer string, minecraftPort
 	}
 	defer serverConn.Close()
 	sendProxyProtocol(clientConn, serverConn)
-	go readAndHandleCommands(clientConn)
 	go func() {
 		_, err := io.Copy(serverConn, clientConn)
 		if err != nil {
