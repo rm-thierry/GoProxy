@@ -76,6 +76,7 @@ func main() {
 	fmt.Println("\u001B[34m |_| \\_|______|_|  \\_\\  \\/   |______|")
 	fmt.Println("")
 	fmt.Println("")
+	createProxyDirectoryIfNotExist()
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		fmt.Println("\033[0;36mPROXY: \033[0m Error starting server:", err)
@@ -97,4 +98,16 @@ func main() {
 		fmt.Println("Ein Client ist gejoint ", clientConn.RemoteAddr().String())
 		fmt.Print("\033[0;36mPROXY: \033[0m")
 	}
+}
+func createProxyDirectoryIfNotExist() error {
+	_, err := os.Stat("Proxys")
+	if os.IsNotExist(err) {
+		errDir := os.MkdirAll("Proxys", 0755)
+		if errDir != nil {
+			return errDir
+		}
+		fmt.Println("Directory 'Proxys' created.")
+	}
+
+	return nil
 }
