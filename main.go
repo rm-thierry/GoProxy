@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -29,8 +31,8 @@ func readConsoleCommands() {
 		switch command {
 		case "help":
 			fmt.Println("Alle Verfügbaren Commands")
-			fmt.Println("/help: Show this Menu")
-			fmt.Println("/clear: Clear the Console")
+			fmt.Println("help: Show this Menu")
+			fmt.Println("clear: Clear the Console")
 		case "stop":
 			os.Exit(0)
 		case "clear":
@@ -47,9 +49,13 @@ func clearConsole() {
 }
 
 func handleConnection(clientConn net.Conn, minecraftServer string, minecraftPort string) {
+	fmt.Println("Verbindung von", clientConn.RemoteAddr().String())
+	fmt.Print("\033[0;36mPROXY: \033[0m")
+
 	serverConn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", minecraftServer, minecraftPort))
 	if err != nil {
 		fmt.Println("Error connecting to Minecraft server:", err)
+		fmt.Print("\033[0;36mPROXY: \033[0m")
 		return
 	}
 	defer serverConn.Close()
@@ -58,15 +64,19 @@ func handleConnection(clientConn net.Conn, minecraftServer string, minecraftPort
 		_, err := io.Copy(serverConn, clientConn)
 		if err != nil {
 			fmt.Println("Error forwarding data to Minecraft server:", err)
+			fmt.Print("\033[0;36mPROXY: \033[0m")
+			clientConn.Close()
 		}
 	}()
 
 	_, err = io.Copy(clientConn, serverConn)
+	if err != nil {
+		fmt.Println("Client connection terminated.")
+		fmt.Print("\033[0;36mPROXY: \033[0m")
+	}
 }
 
 func main() {
-	minecraftServer := "78.46.208.71"
-	minecraftPort := "25565"
 	port := 25555
 	fmt.Println("\u001B[34m  _   _ ______ _______      ________ ")
 	fmt.Println("\u001B[34m | \\ | |  ____|  __ \\ \\    / /  ____|")
@@ -77,9 +87,15 @@ func main() {
 	fmt.Println("")
 	fmt.Println("")
 	createProxyDirectoryIfNotExist()
+	config, err := ReadConfig()
+	minecraftServer := config["host"]
+	minecraftPort := config["port"]
+	if err != nil {
+		log.Fatalf("Error reading configuration: %v", err)
+	}
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
-		fmt.Println("\033[0;36mPROXY: \033[0m Error starting server:", err)
+		fmt.Println("Error starting server:", err)
 		return
 	}
 	defer listener.Close()
@@ -89,25 +105,71 @@ func main() {
 	for {
 		clientConn, err := listener.Accept()
 		if err != nil {
-			fmt.Println("\033[0;36mPROXY: \033[0m Error accepting client connection:", err)
-			fmt.Print("\033[0;36mPROXY: \033[0m")
+			fmt.Println("Error accepting client connection:", err)
 			continue
 		}
 
 		go handleConnection(clientConn, minecraftServer, minecraftPort)
-		fmt.Println("Ein Client ist gejoint ", clientConn.RemoteAddr().String())
-		fmt.Print("\033[0;36mPROXY: \033[0m")
 	}
 }
+
 func createProxyDirectoryIfNotExist() error {
+	proxyDir := "Proxys"
 	_, err := os.Stat("Proxys")
 	if os.IsNotExist(err) {
 		errDir := os.MkdirAll("Proxys", 0755)
 		if errDir != nil {
 			return errDir
 		}
-		fmt.Println("Directory 'Proxys' created.")
+		fmt.Println("Der Ordner Proxy wurde erstellt")
+	}
+	configFile := filepath.Join(proxyDir, "config.yml")
+	_, err = os.Stat(configFile)
+	if os.IsNotExist(err) {
+		file, err := os.Create(configFile)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		defaultConfig := []byte(`Proxy01
+host: 0.0.0.0
+port: 25565
+proxyprotocol: false
+		`)
+		_, err = file.Write(defaultConfig)
+		if err != nil {
+			return err
+		}
+		fmt.Println("Config 'config.yml' wurde erstellt. Bitte passe die Config an und starte die Proxy")
+		os.Exit(0)
+	}
+	return nil
+}
+
+func ReadConfig() (map[string]string, error) {
+	config := make(map[string]string)
+
+	configFile := "Proxys/config.yml"
+	file, err := os.Open(configFile)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		config[key] = value
 	}
 
-	return nil
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return config, nil
 }
