@@ -4,13 +4,88 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
+	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 )
+
+var Proxys []ProxyConfig
+
+type ProxyConfig struct {
+	Port       int
+	Address    string
+	TargetPort int
+}
+
+func getProxys(folderPath string) ([]ProxyConfig, error) {
+	var proxyConfigs []ProxyConfig
+
+	files, err := ioutil.ReadDir(folderPath)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, file := range files {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), ".yml") {
+			configFilePath := filepath.Join(folderPath, file.Name())
+			proxyConfig, err := readProxyConfigFromFile(configFilePath)
+			if err != nil {
+				fmt.Printf("Error reading '%s': %v\n", file.Name(), err)
+				continue
+			}
+			proxyConfigs = append(proxyConfigs, proxyConfig)
+		}
+	}
+	return proxyConfigs, nil
+}
+
+func readProxyConfigFromFile(filePath string) (ProxyConfig, error) {
+	var proxyConfig ProxyConfig
+
+	fileData, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return proxyConfig, err
+	}
+
+	lines := strings.Split(string(fileData), "\n")
+	for _, line := range lines {
+		fields := strings.Split(line, ":")
+		if len(fields) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(fields[0])
+		value := strings.TrimSpace(fields[1])
+
+		switch key {
+		case "Port":
+			port, err := strconv.Atoi(value)
+			if err != nil {
+				return proxyConfig, fmt.Errorf("Wrong Port in '%s'", filePath)
+			}
+			proxyConfig.Port = port
+		case "Address":
+			proxyConfig.Address = value
+		case "TargetPort":
+			targetPort, err := strconv.Atoi(value)
+			if err != nil {
+				return proxyConfig, fmt.Errorf("Wrong TargetPort in '%s'", filePath)
+			}
+			proxyConfig.TargetPort = targetPort
+		}
+	}
+
+	if proxyConfig.Port == 0 || proxyConfig.Address == "" || proxyConfig.TargetPort == 0 {
+		return proxyConfig, fmt.Errorf("Wrong Config '%s'", filePath)
+	}
+
+	return proxyConfig, nil
+}
 
 func sendProxyProtocol(clientConn net.Conn, serverOutput io.Writer) {
 	sourceAddress := clientConn.RemoteAddr().(*net.TCPAddr)
@@ -25,14 +100,24 @@ func sendProxyProtocol(clientConn net.Conn, serverOutput io.Writer) {
 func readConsoleCommands() {
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
-		fmt.Print("\033[0;36mPROXY: \033[0m")
+		fmt.Print("\033[0m", time.TimeOnly, " \033[0;36mPROXY: \033[0m")
 		scanner.Scan()
 		command := strings.TrimSpace(scanner.Text())
 		switch command {
-		case "help":
-			fmt.Println("Alle Verfügbaren Commands")
-			fmt.Println("help: Show this Menu")
-			fmt.Println("clear: Clear the Console")
+		case "list":
+			folderPath := "Proxys"
+			proxyConfigs, err := getProxys(folderPath)
+			if err != nil {
+				fmt.Println("Fehler beim Lesen der Proxy-Konfigurationen:", err)
+				return
+			}
+			var count int = 0
+			for _, config := range proxyConfigs {
+				count = count + 1
+				fmt.Println("Proxy", count, config.Port, config.Address, config.TargetPort)
+			}
+		case "update":
+			updateProxies()
 		case "stop":
 			os.Exit(0)
 		case "clear":
@@ -48,14 +133,12 @@ func clearConsole() {
 	cmd.Run()
 }
 
-func handleConnection(clientConn net.Conn, minecraftServer string, minecraftPort string) {
-	fmt.Println("Verbindung von", clientConn.RemoteAddr().String())
-	fmt.Print("\033[0;36mPROXY: \033[0m")
+func handleConnection(clientConn net.Conn, minecraftServer string, minecraftPort int) {
 
-	serverConn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", minecraftServer, minecraftPort))
+	serverConn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", minecraftServer, fmt.Sprint(minecraftPort)))
 	if err != nil {
-		fmt.Println("Error connecting to Minecraft server:", err)
-		fmt.Print("\033[0;36mPROXY: \033[0m")
+		fmt.Println("Error:", err)
+		fmt.Print("\033[0m", time.TimeOnly, " \033[0;36mPROXY: \033[0m")
 		return
 	}
 	defer serverConn.Close()
@@ -63,21 +146,88 @@ func handleConnection(clientConn net.Conn, minecraftServer string, minecraftPort
 	go func() {
 		_, err := io.Copy(serverConn, clientConn)
 		if err != nil {
-			fmt.Println("Error forwarding data to Minecraft server:", err)
-			fmt.Print("\033[0;36mPROXY: \033[0m")
+			fmt.Println("Error:", err)
+			fmt.Print("\033[0m", time.TimeOnly, " \033[0;36mPROXY: \033[0m")
 			clientConn.Close()
 		}
 	}()
 
 	_, err = io.Copy(clientConn, serverConn)
 	if err != nil {
-		fmt.Println("Client connection terminated.")
-		fmt.Print("\033[0;36mPROXY: \033[0m")
 	}
 }
 
+func startProxyListener(port int, minecraftServer string, minecraftPort int) {
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer listener.Close()
+	fmt.Printf("Listening :%d\n", port)
+	go readConsoleCommands()
+
+	for {
+		clientConn, err := listener.Accept()
+		if err != nil {
+			fmt.Println("Error:", err)
+			continue
+		}
+
+		go handleConnection(clientConn, minecraftServer, minecraftPort)
+	}
+}
+
+func updateProxies() {
+	folderPath := "Proxys"
+
+	existingPorts := make(map[int]bool)
+	for _, proxy := range Proxys {
+		existingPorts[proxy.Port] = true
+	}
+
+	newProxies, err := getNewProxies(folderPath)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	for _, proxy := range newProxies {
+		if existingPorts[proxy.Port] {
+			continue
+		}
+
+		fmt.Printf("New Proxy - Port: %d, Adress: %s, TargetPort: %d\n", proxy.Port, proxy.Address, proxy.TargetPort)
+		Proxys = append(newProxies)
+		go startProxyListener(proxy.Port, proxy.Address, proxy.TargetPort)
+	}
+	fmt.Println("Updated Successfully")
+}
+
+func getNewProxies(folderPath string) ([]ProxyConfig, error) {
+	var newProxies []ProxyConfig
+
+	files, err := ioutil.ReadDir(folderPath)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, file := range files {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), ".yml") {
+			configFilePath := filepath.Join(folderPath, file.Name())
+			proxyConfig, err := readProxyConfigFromFile(configFilePath)
+			if err != nil {
+				fmt.Printf("Error '%s': %v\n", file.Name(), err)
+				continue
+			}
+			newProxies = append(newProxies, proxyConfig)
+		}
+	}
+	return newProxies, nil
+}
+
 func main() {
-	port := 25555
+	folderPath := "Proxys"
 	fmt.Println("\u001B[34m  _   _ ______ _______      ________ ")
 	fmt.Println("\u001B[34m | \\ | |  ____|  __ \\ \\    / /  ____|")
 	fmt.Println("\u001B[34m |  \\| | |__  | |__) \\ \\  / /| |__  ")
@@ -87,61 +237,27 @@ func main() {
 	fmt.Println("")
 	fmt.Println("")
 	createProxyDirectoryIfNotExist()
-	config, err := ReadConfig()
-	minecraftServer := config["host"]
-	minecraftPort := config["port"]
+	proxyConfigs, err := getProxys(folderPath)
 	if err != nil {
-		log.Fatalf("Error reading configuration: %v", err)
-	}
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		fmt.Println("Error starting server:", err)
+		fmt.Println("Error:", err)
 		return
 	}
-	defer listener.Close()
-	fmt.Printf("Listen to :%d\n", port)
-	go readConsoleCommands()
+	Proxys = append(proxyConfigs)
 
-	for {
-		clientConn, err := listener.Accept()
-		if err != nil {
-			fmt.Println("Error accepting client connection:", err)
-			continue
-		}
-
-		go handleConnection(clientConn, minecraftServer, minecraftPort)
+	for _, config := range proxyConfigs {
+		go startProxyListener(config.Port, config.Address, config.TargetPort)
 	}
+	readConsoleCommands()
 }
 
 func createProxyDirectoryIfNotExist() error {
-	proxyDir := "Proxys"
 	_, err := os.Stat("Proxys")
 	if os.IsNotExist(err) {
 		errDir := os.MkdirAll("Proxys", 0755)
 		if errDir != nil {
 			return errDir
 		}
-		fmt.Println("Der Ordner Proxy wurde erstellt")
-	}
-	configFile := filepath.Join(proxyDir, "config.yml")
-	_, err = os.Stat(configFile)
-	if os.IsNotExist(err) {
-		file, err := os.Create(configFile)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		defaultConfig := []byte(`Proxy01
-host: 0.0.0.0
-port: 25565
-proxyprotocol: false
-		`)
-		_, err = file.Write(defaultConfig)
-		if err != nil {
-			return err
-		}
-		fmt.Println("Config 'config.yml' wurde erstellt. Bitte passe die Config an und starte die Proxy")
-		os.Exit(0)
+		fmt.Println("Created Proxy Folder")
 	}
 	return nil
 }
