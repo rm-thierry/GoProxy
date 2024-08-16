@@ -66,7 +66,7 @@ func readProxyConfigFromFile(filePath string) (ProxyConfig, error) {
 		case "Port":
 			port, err := strconv.Atoi(value)
 			if err != nil {
-				return proxyConfig, fmt.Errorf("Wrong Port in '%s'", filePath)
+				return proxyConfig, fmt.Errorf("Falscher Port '%s'", filePath)
 			}
 			proxyConfig.Port = port
 		case "Address":
@@ -74,7 +74,7 @@ func readProxyConfigFromFile(filePath string) (ProxyConfig, error) {
 		case "TargetPort":
 			targetPort, err := strconv.Atoi(value)
 			if err != nil {
-				return proxyConfig, fmt.Errorf("Wrong TargetPort in '%s'", filePath)
+				return proxyConfig, fmt.Errorf("Falscher target Port '%s'", filePath)
 			}
 			proxyConfig.TargetPort = targetPort
 		}
@@ -197,7 +197,7 @@ func updateProxies() {
 			continue
 		}
 
-		fmt.Printf("New Proxy - Port: %d, Adress: %s, TargetPort: %d\n", proxy.Port, proxy.Address, proxy.TargetPort)
+		fmt.Printf("Neue Proxy - Port: %d, Addres: %s, TargetPort: %d\n", proxy.Port, proxy.Address, proxy.TargetPort)
 		Proxys = append(newProxies)
 		go startProxyListener(proxy.Port, proxy.Address, proxy.TargetPort)
 	}
