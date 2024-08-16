@@ -197,7 +197,7 @@ func updateProxies() {
 			continue
 		}
 
-		fmt.Printf("Neue Proxy - Port: %d, Addres: %s, TargetPort: %d\n", proxy.Port, proxy.Address, proxy.TargetPort)
+		fmt.Printf("Neue Proxy - Port: %d, Address: %s, TargetPort: %d\n", proxy.Port, proxy.Address, proxy.TargetPort)
 		Proxys = append(newProxies)
 		go startProxyListener(proxy.Port, proxy.Address, proxy.TargetPort)
 	}
